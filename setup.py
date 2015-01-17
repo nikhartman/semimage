@@ -8,5 +8,5 @@ setup(name = 'semimage',
       author = 'Nik Hartman',
       author_email = 'nik.hartman@gmail.com',
       url = 'https://github.com/nikhartman/semimage',
-      packages = ['semimage'],
+      py_modules = ['semimage'],
       )
