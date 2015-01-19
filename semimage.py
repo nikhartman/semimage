@@ -61,7 +61,7 @@ def histeq(image_array,nbr_bins=256):
 
 def color_limits(image_array):
     """ returns limits for color scale of image """
-    return np.percentile(image_array, [0.02, 98.6]) #sort of empirically determined
+    return np.percentile(image_array, [0.01, 99]) #sort of empirically determined
 
 #the next two functions are kind of for test purposes. 
 #go to the bottom of the page for the current best case settings
