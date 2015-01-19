@@ -59,9 +59,13 @@ def histeq(image_array,nbr_bins=256):
 
     return image_array_eq.reshape(image_array.shape)
 
+def normalize(image_array):
+    image_array = image_array - image_array.min()
+    return (image_array/image_array.max())*100.0
+
 def color_limits(image_array):
     """ returns limits for color scale of image """
-    return np.percentile(image_array, [0.01, 99]) #sort of empirically determined
+    return image_array.mean()-20.0, image_array.mean()+20.0 #sort of empirically determined
 
 #the next two functions are kind of for test purposes. 
 #go to the bottom of the page for the current best case settings
@@ -82,7 +86,7 @@ def import_apply_filters(filename, filters = []):
 
     return imarray
 
-def sem_image_plot(imarray, cmin, cmax, colormap = cm.Greys_r):
+def image_plot(imarray, cmin, cmax, colormap = cm.Greys_r):
     """ plot image array from SEM """
     
     fdpi = 80
