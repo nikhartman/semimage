@@ -119,7 +119,7 @@ def edit_color_save(filename, filters = [], colormap = cm.Greys_r):
     new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
     fig.savefig(new_name, dpi = fdpi)
     fig.clf()
-    
+                
 def edit_color_show(filename, filters = [], colormap = cm.Greys_r):
     """ displays the image with a standard set of parameters """
 
@@ -163,8 +163,26 @@ def cnt_image_edit(filename):
     fig.clf()
     return cmin, cmax
 
-#def device_image_edit(filename):
-#    """ similar to above, but my favorite settings for editing device
-#        images. """
-#
-#    imarray = tif_to_np(filename)
+def device_image_edit(filename):
+    """ similar to above, but my favorite settings for editing device
+        images. """
+
+    dir_name = 'devices_edited/'
+    if os.path.isdir(dir_name)==False: 
+        os.mkdir(dir_name[:-1])
+        
+    imarray = import_apply_filters(filename, filters = ['fit'])
+    imarray = normalize(imarray)
+    cmin, cmax = color_limits(imarray)
+    
+    fdpi = 80
+    fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
+    fig = plt.figure(figsize=fsize, dpi = fdpi)
+    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
+    ax = fig.add_subplot(1,1,1)
+    img = ax.imshow(imarray, cmap = cm.binary_r, vmin = 10, vmax = 90)
+    ax.axis('off')
+    new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
+    fig.savefig(new_name, dpi = fdpi)
+    fig.clf()
+
