@@ -104,9 +104,9 @@ def edit_color_save(filename, filters = [], colormap = cm.Greys_r):
     dir_name = 'edited/'
     if os.path.isdir(dir_name)==False: 
         os.mkdir(dir_name[:-1])
-    
+        
     imarray = import_apply_filters(filename, filters = filters)
-    
+    imarray = normalize(imarray)
     cmin, cmax = color_limits(imarray)
     
     fdpi = 80
@@ -125,14 +125,8 @@ def edit_color_show(filename, filters = [], colormap = cm.Greys_r):
 
     imarray = tif_to_np(filename)
 
-    for f in filters:
-        if f == 'histeq':
-            imarray = histeq(imarray)
-        if f == 'lpf':
-            imarray = hartman_low_pass_filter(imarray)
-        if f == 'fit':
-            imarray = plane_fit(imarray)
-    
+    imarray = import_apply_filters(filename, filters = filters)
+    imarray = normalize(imarray)
     cmin, cmax = color_limits(imarray)
     
     fdpi = 80
@@ -140,7 +134,7 @@ def edit_color_show(filename, filters = [], colormap = cm.Greys_r):
     fig = plt.figure(figsize=fsize, dpi = fdpi)
     fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
     ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = colormap, vmin = 0, vmax = 325)
+    img = ax.imshow(imarray, cmap = colormap, vmin = cmin, vmax = cmax)
     ax.axis('off')
     
 #below are some functions to be used quickly when editing files
@@ -154,13 +148,14 @@ def cnt_image_edit(filename):
         os.mkdir(dir_name[:-1])
 
     imarray = import_apply_filters(filename, filters = ['fit'])
+    imarray = normalize(imarray)
+    cmin, cmax = color_limits(imarray)
     
     fdpi = 80
     fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
     fig = plt.figure(figsize=fsize, dpi = fdpi)
     fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
     ax = fig.add_subplot(1,1,1)
-    cmin, cmax = color_limits(imarray)
     img = ax.imshow(imarray, cmap = cm.Greys_r, vmin = cmin, vmax = cmax)
     ax.axis('off')
     new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
