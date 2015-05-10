@@ -1,17 +1,16 @@
-#some stuff to help plot and save colorful SEM images
-
 import os
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
+import scipy
 from scipy.optimize import leastsq
-import scipy.ndimage as ndi
-from PIL import Image
+from scipy import ndimage 
+from skimage import io, img_as_float
 
-def tif_to_np(filename):
-    """ import tif and convert to numpy array """
-    im = Image.open(filename)
-    return np.array(im)
+# filters and utility functions for general purpose
+
+def image_to_np(filename):
+    return img_as_float(ndimage.imread(filename))
 
 def plane_fit(image_array, guess = [0,0,0]):
     """ fits the image to a plane. returns the original array - best fit plane """
@@ -41,7 +40,7 @@ def hartman_low_pass_filter(image_array):
 
 def gauss_filter(image_array):
     """ gaussian filter """
-    return ndi.filters.gaussian_filter(image_array, 1.0)
+    return ndimage.filters.gaussian_filter(image_array, 1.0)
 
 def histeq(image_array,nbr_bins=256):
     """ Rescales image data to give equal weight to all intensity ranges.
@@ -59,130 +58,91 @@ def histeq(image_array,nbr_bins=256):
 
     return image_array_eq.reshape(image_array.shape)
 
-def normalize(image_array):
+def normalize(image_array, max_val = 100.0):
     image_array = image_array - image_array.min()
-    return (image_array/image_array.max())*100.0
+    return (image_array/image_array.max())*max_val
 
-def color_limits(image_array):
-    """ returns limits for color scale of image """
-    return image_array.mean()-20.0, image_array.mean()+20.0 #sort of empirically determined
+##### matched filter bank built specifically for carbon nanotube location #####
 
-#the next two functions are kind of for test purposes. 
-#go to the bottom of the page for the current best case settings
-
-def import_apply_filters(filename, filters = []):
-    """ filter original image and return numpy array """
-    imarray = tif_to_np(filename)
-
-    for f in filters:
-        if f == 'histeq':
-            imarray = histeq(imarray)
-        if f == 'lpf':
-            imarray = hartman_low_pass_filter(imarray)
-        if f == 'fit':
-            imarray = plane_fit(imarray)
-        if f == 'gauss':
-            imarray = gauss_filter(imarray)
-
-    return imarray
-
-def image_plot(imarray, cmin, cmax, colormap = cm.Greys_r):
-    """ plot image array from SEM """
+def sinc(x, k, a):
+    """ return a sinc function cutoff at +/-2*pi/a """
     
-    fdpi = 80
-    fsize = tuple([item/fdpi*0.75 for item in imarray.shape[::-1]])
-    fig = plt.figure(figsize=fsize, dpi = fdpi)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = colormap, vmin = cmin, vmax = cmax)
-    ax.axis('off')    
-
-def edit_color_save(filename, filters = [], colormap = cm.Greys_r):
-    """takes a tif images, subtracts a planefit, then saves it in
-    color as a .png """
-
-    dir_name = 'edited/'
-    if os.path.isdir(dir_name)==False: 
-        os.mkdir(dir_name[:-1])
-        
-    imarray = import_apply_filters(filename, filters = filters)
-    imarray = normalize(imarray)
-    cmin, cmax = color_limits(imarray)
+    iz = int(len(x)/2)
+    il = iz-np.ceil(2.0*np.pi/k)
+    iu = iz+np.ceil(2.0*np.pi/k)+1
     
-    fdpi = 80
-    fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
-    fig = plt.figure(figsize=fsize, dpi = fdpi)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = colormap, vmin = cmin, vmax = cmax)
-    ax.axis('off')
-    new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
-    fig.savefig(new_name, dpi = fdpi)
-    fig.clf()
-                
-def edit_color_show(filename, filters = [], colormap = cm.Greys_r):
-    """ displays the image with a standard set of parameters """
+    s = np.sin(k*x)/(k*x) # function to start with
+    s[iz] = 1 # numpy doesn't know about limits
+    s[il:iu] -= s[il:iu].mean()
+    s[0:il] = 0; s[iu:] = 0
+    return a*s
 
-    imarray = tif_to_np(filename)
+def build_kernel(k, a, L, N):
+    """ N is an odd integer. The kernel will be size NxN with (x,y) = (0,0)
+        in the center. """
+    x = np.arange(-(N/2),(N/2)+1,1)
+    kernel = np.zeros((N,N), dtype = np.float)
+    kernel[abs(x)<L/2.0, :] = sinc(x, k, a)
+    return kernel
 
-    imarray = import_apply_filters(filename, filters = filters)
-    imarray = normalize(imarray)
-    cmin, cmax = color_limits(imarray)
+def build_filter_bank(k, a, L, N, R):
+    """ builds the nanotube filter bank 
+            k -- inverse length for sinc function
+            a -- height of sinc function
+            L -- nanotube length to search for
+            N -- size of filter matrix
+            R -- number of rotations """
     
-    fdpi = 80
-    fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
-    fig = plt.figure(figsize=fsize, dpi = fdpi)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = colormap, vmin = cmin, vmax = cmax)
-    ax.axis('off')
-    
-#below are some functions to be used quickly when editing files
+    rotations = np.linspace(0,180,R+1)[:-1]
+
+    fbank = np.zeros((len(rotations),N,N))
+    kernel = build_kernel(k, a, L, N)
+    for i, r in enumerate(rotations):
+        fbank[i] = ndimage.rotate(kernel, r, reshape=False, mode='nearest')
+    return fbank
+
+def apply_filter(im, fbank, threshold):
+    """ apply the bank of filters to a given image """
+
+    result = np.zeros(im.shape)
+    for i, f in enumerate(fbank):
+        imfilt = ndimage.convolve(im, fbank[i], mode='nearest')
+        result += imfilt>threshold
+    return result
+
+class MatchedFilter(object):
+
+    def __init__(self, k, a, L, N, R, threshold):
+        self.threshold = threshold
+        self.bank = build_filter_bank(k, a, L, N, R)
+    def __call__(self, im):
+        return apply_filter(im, self.bank, self.threshold)
+
+###### function to quickly edit nanotube images using matched filter bank #####
     
 def cnt_image_edit(filename):
     """ these are currently my favorite settings for processing
         nanotube images using this set of functions. """
 
-    dir_name = 'edited/'
-    if os.path.isdir(dir_name)==False: 
-        os.mkdir(dir_name[:-1])
+    # some stuff to handle files or filelists
+    if type(filename)==type(''):
+        filename = [filename]
+    elif type(filename)==type([]):
+        pass
+    else:
+        print "Enter an string or list of strings"
 
-    imarray = import_apply_filters(filename, filters = ['fit'])
-    imarray = normalize(imarray)
-    cmin, cmax = color_limits(imarray)
+    # use the first entry to create a new directory
+    current_path = os.path.dirname(filename[0])
+    new_path = os.path.join(current_path, 'edited')
+    if not os.path.exists(new_path):
+        os.makedirs(new_path)
     
-    fdpi = 80
-    fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
-    fig = plt.figure(figsize=fsize, dpi = fdpi)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = cm.Greys_r, vmin = cmin, vmax = cmax)
-    ax.axis('off')
-    new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
-    fig.savefig(new_name, dpi = fdpi)
-    fig.clf()
-    return cmin, cmax
-
-def device_image_edit(filename):
-    """ similar to above, but my favorite settings for editing device
-        images. """
-
-    dir_name = 'devices_edited/'
-    if os.path.isdir(dir_name)==False: 
-        os.mkdir(dir_name[:-1])
-        
-    imarray = import_apply_filters(filename, filters = ['fit'])
-    imarray = normalize(imarray)
-    cmin, cmax = color_limits(imarray)
-    
-    fdpi = 80
-    fsize = tuple([item/fdpi for item in imarray.shape[::-1]])
-    fig = plt.figure(figsize=fsize, dpi = fdpi)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    ax = fig.add_subplot(1,1,1)
-    img = ax.imshow(imarray, cmap = cm.binary_r, vmin = 10, vmax = 90)
-    ax.axis('off')
-    new_name = os.path.join(dir_name, filename[:-4]+'_edit.png')
-    fig.savefig(new_name, dpi = fdpi)
-    fig.clf()
-
+    params = [1.75, 10.0, 16.0, 25, 15, 3.6] # k, a, L, N, R, threshold
+    mfilter = MatchedFilter(*params)
+    for f in filename:
+        print 'working on file: {0}'.format(f)
+        im = image_to_np(f)
+        im_filtered = ndimage.filters.median_filter(mfilter(im), size=(3,3))
+        fnew = os.path.join(new_path,os.path.basename(f)[:-4]+'.png')
+        scipy.misc.toimage(-im_filtered, cmin=-6, cmax=0).save(fnew)
